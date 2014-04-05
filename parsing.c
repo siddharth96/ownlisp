@@ -26,6 +26,9 @@ void add_history(char* unused) {}
 #endif
 #include "mpc.h"
 
+long eval(mpc_ast_t* tree);
+long eval_op(long x, char* op, long y);
+
 int main(int argc, char** argv) {
     mpc_parser_t* Number = mpc_new("number");
     mpc_parser_t* Operator = mpc_new("operator");
@@ -40,15 +43,6 @@ int main(int argc, char** argv) {
       lispy    : /^/ <operator> <expr>+ /$/ ;             \
     ",
     Number, Operator, Expr, Lispy);    
-    /*mpca_lang(MPC_LANG_DEFAULT,
-              "                                                    \
-               number   : /-?[0-9]+/ ;                             \
-               operator : '+' | '-' | '*' | '/' ;                  \
-               expr     : <number> | '(' <operator> <expr>+ ')' ;  \
-               lispy    : /^/ <operator> <expr>+ /$/ ;             \
-              ",
-              Number, Operator, Expr, Lispy);
-    */
     puts("Lispy version 0.0.0.0.2");
     puts("Press Ctrl+C to exit");
 
@@ -59,7 +53,8 @@ int main(int argc, char** argv) {
         mpc_result_t r;
         if (mpc_parse("stdin", input, Lispy, &r)) {
             // Success, print the AST
-            mpc_ast_print(r.output);
+            long result = eval(r.output);
+            printf("%li\n", result);
             mpc_ast_delete(r.output);
         } else {
             // Failure, print the error
@@ -71,3 +66,26 @@ int main(int argc, char** argv) {
     mpc_cleanup(4, Number, Operator, Expr, Lispy);
     return 0;
 }
+
+long eval(mpc_ast_t* tree) {
+    if (strstr(tree->tag, "number")) { return atoi(tree->contents); }
+    // Operator is the second child
+    char* op = tree->children[1]->contents;
+    // Storing the third child
+    long x = eval(tree->children[2]);
+    int i = 3;
+    while(strstr(tree->children[i]->tag, "expr")) {
+        x = eval_op(x, op, eval(tree->children[i]));
+        i++;
+    }
+    return x;
+}
+
+long eval_op(long x, char* op, long y) {
+    if (strcmp(op, "+") == 0) { return x + y; }
+    if (strcmp(op, "-") == 0) { return x - y; }
+    if (strcmp(op, "*") == 0) { return x * y; }
+    if (strcmp(op, "/") == 0) { return x / y; }
+    return 0;
+}
+

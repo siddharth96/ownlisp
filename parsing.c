@@ -26,8 +26,22 @@ void add_history(char* unused) {}
 #endif
 #include "mpc.h"
 
-long eval(mpc_ast_t* tree);
-long eval_op(long x, char* op, long y);
+typedef struct {
+    int type;
+    long num;
+    int err;
+} lval;
+
+
+enum { LVAL_NUM, LVAL_ERR };
+enum { LERR_DIV_ZERO, LERR_BAD_OP, LERR_BAD_NUM };
+
+lval eval(mpc_ast_t* tree);
+lval eval_op(lval x, char* op, lval y);
+lval lval_num(long x);
+lval lval_err(int x);
+void lval_print(lval v);
+void lval_println(lval v);
 
 int main(int argc, char** argv) {
     mpc_parser_t* Number = mpc_new("number");
@@ -53,8 +67,8 @@ int main(int argc, char** argv) {
         mpc_result_t r;
         if (mpc_parse("stdin", input, Lispy, &r)) {
             // Success, print the AST
-            long result = eval(r.output);
-            printf("%li\n", result);
+            lval result = eval(r.output);
+            lval_println(result);
             mpc_ast_delete(r.output);
         } else {
             // Failure, print the error
@@ -67,12 +81,15 @@ int main(int argc, char** argv) {
     return 0;
 }
 
-long eval(mpc_ast_t* tree) {
-    if (strstr(tree->tag, "number")) { return atoi(tree->contents); }
+lval eval(mpc_ast_t* tree) {
+    if (strstr(tree->tag, "number")) { 
+        long x = strtol(tree->contents, NULL, 10);
+       return errno != ERANGE ? lval_num(x) : lval_err(LERR_BAD_NUM); 
+    }
     // Operator is the second child
     char* op = tree->children[1]->contents;
     // Storing the third child
-    long x = eval(tree->children[2]);
+    lval x = eval(tree->children[2]);
     int i = 3;
     while(strstr(tree->children[i]->tag, "expr")) {
         x = eval_op(x, op, eval(tree->children[i]));
@@ -81,11 +98,48 @@ long eval(mpc_ast_t* tree) {
     return x;
 }
 
-long eval_op(long x, char* op, long y) {
-    if (strcmp(op, "+") == 0) { return x + y; }
-    if (strcmp(op, "-") == 0) { return x - y; }
-    if (strcmp(op, "*") == 0) { return x * y; }
-    if (strcmp(op, "/") == 0) { return x / y; }
-    return 0;
+lval eval_op(lval x, char* op, lval y) {
+    if (x.type == LVAL_ERR) { return x; }
+    if (y.type == LVAL_ERR) { return y; }
+
+    if (strcmp(op, "+") == 0) { return lval_num(x.num + y.num); }
+    if (strcmp(op, "-") == 0) { return lval_num(x.num - y.num); }
+    if (strcmp(op, "*") == 0) { return lval_num(x.num * y.num); }
+    if (strcmp(op, "/") == 0) { 
+        return y.num == 0 ? lval_err(LERR_DIV_ZERO) : lval_num(x.num / y.num); 
+    }
+    return lval_err(LERR_BAD_OP);
+}
+
+lval lval_num(long x) {
+    lval v;
+    v.type = LVAL_NUM;
+    v.num = x;
+    return v;
+}
+
+lval lval_err(int x) {
+    lval v;
+    v.type = LVAL_ERR;
+    v.err = x;
+    return v;
+}
+
+void lval_print(lval v) {
+    switch(v.type) {
+        case LVAL_NUM : 
+            printf("%li", v.num);
+            break;
+        case LVAL_ERR:
+            if (v.err == LERR_DIV_ZERO) { printf("Error: Division by zero!"); }
+            if (v.err == LERR_BAD_OP) { printf("Error: Invalid operator!"); }
+            if (v.err == LERR_BAD_NUM) { printf("Error: Invalid number"); }
+            break;
+    }
+}
+
+void lval_println(lval v) {
+    lval_print(v);
+    putchar('\n');
 }
 
